@@ -74,8 +74,10 @@ void Error_Handler(void);
 #define LEDS3_GPIO_Port GPIOA
 #define NHDD_Pin GPIO_PIN_4
 #define NHDD_GPIO_Port GPIOA
+#define NHDD_EXTI_IRQn EXTI4_15_IRQn
 #define NPOWER_Pin GPIO_PIN_5
 #define NPOWER_GPIO_Port GPIOA
+#define NPOWER_EXTI_IRQn EXTI4_15_IRQn
 #define LEDS4_Pin GPIO_PIN_6
 #define LEDS4_GPIO_Port GPIOA
 #define LEDSTRIPES_Pin GPIO_PIN_7

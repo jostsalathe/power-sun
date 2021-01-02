@@ -28,11 +28,22 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef struct {
+  uint16_t value;
+  uint8_t step;
+  int8_t dir;
+} fader_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define PWM_0 (1<<0)
+#define PWM_1 (1<<1)
+#define PWM_2 (1<<2)
+#define PWM_3 (1<<3)
+#define PWM_4 (1<<4)
+#define PWM_STRIPE (1<<5)
+#define PWM_DEBUG2 (1<<6)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -54,7 +65,8 @@ static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
-
+void setPWM(uint8_t led, uint16_t value);
+void advanceFader(fader_t* fader);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -94,13 +106,29 @@ int main(void)
   MX_TIM3_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  fader_t faders[5] = {0};
+  faders[0].step = 1;
   while (1)
   {
+    HAL_Delay(10);
+    for (int i=0; i<5; ++i)
+    {
+      advanceFader(&faders[i]);
+      setPWM(1<<i, faders[i].value);
+      if (i<4 && faders[i].value == 70) faders[i+1].step = 1;
+//      if (faders[i].value >= 500) faders[i].step = 5;
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -173,9 +201,9 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = 1999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
@@ -234,9 +262,9 @@ static void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 0;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
+  htim3.Init.Period = 1999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
@@ -306,9 +334,36 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
+
+void setPWM(uint8_t ledMask, uint16_t value)
+{
+  if (ledMask & PWM_0) TIM2->CCR1 = value;
+  if (ledMask & PWM_1) TIM2->CCR2 = value;
+  if (ledMask & PWM_2) TIM2->CCR3 = value;
+  if (ledMask & PWM_3) TIM2->CCR4 = value;
+  if (ledMask & PWM_4) TIM3->CCR1 = value;
+  if (ledMask & PWM_STRIPE) TIM3->CCR2 = value;
+  if (ledMask & PWM_DEBUG2) TIM3->CCR4 = value;
+}
+
+void advanceFader(fader_t* fader)
+{
+  if (fader->value >= 500) fader->dir = -2;
+  else if (fader->value <= 200) fader->dir = 5;
+  fader->value += ((int)fader->step) * fader->dir;
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	//TODO: process NHDD_Pin and NPOWER_Pin interrupt events
+}
 
 /* USER CODE END 4 */
 
