@@ -23,13 +23,13 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "usbd_cdc_if.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef struct {
-  uint16_t value;
+  uint8_t value;
   uint8_t step;
   int8_t dir;
 } fader_t;
@@ -53,13 +53,12 @@ typedef struct {
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-RTC_HandleTypeDef hrtc;
-
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim14;
 
 /* USER CODE BEGIN PV */
-
+fader_t faders[N_ANIM] = {0};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -67,9 +66,10 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
-static void MX_RTC_Init(void);
+static void MX_TIM14_Init(void);
 /* USER CODE BEGIN PFP */
-void setPWM(uint8_t led, uint16_t value);
+void PrintInt(uint32_t value, uint8_t * pbuf, uint32_t length);
+void setPWM(uint8_t led, uint8_t value);
 void advanceFader(fader_t* fader);
 /* USER CODE END PFP */
 
@@ -109,7 +109,7 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM3_Init();
   MX_USB_DEVICE_Init();
-  MX_RTC_Init();
+  MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -118,22 +118,16 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+  HAL_TIM_Base_Start_IT(&htim14);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  fader_t faders[N_ANIM] = {0};
   faders[0].step = 1;
-  setPWM(PWM_STRIPE, 20);
+  setPWM(PWM_STRIPE, 30);
   while (1)
   {
-    HAL_Delay(40);
-    for (int i=0; i<N_ANIM; ++i)
-    {
-      advanceFader(&faders[i]);
-      setPWM(1<<i, faders[i].value);
-      if (i<(N_ANIM-1) && faders[i].value > 25 && faders[i].value < 35) faders[i+1].step = 1;
-    }
+    HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -176,48 +170,13 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_RTC;
-  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_HSE_DIV32;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB;
   PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL;
 
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief RTC Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_RTC_Init(void)
-{
-
-  /* USER CODE BEGIN RTC_Init 0 */
-
-  /* USER CODE END RTC_Init 0 */
-
-  /* USER CODE BEGIN RTC_Init 1 */
-
-  /* USER CODE END RTC_Init 1 */
-  /** Initialize RTC Only
-  */
-  hrtc.Instance = RTC;
-  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  hrtc.Init.AsynchPrediv = 124;
-  hrtc.Init.SynchPrediv = 1999;
-  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
-  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
-  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
-  if (HAL_RTC_Init(&hrtc) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN RTC_Init 2 */
-
-  /* USER CODE END RTC_Init 2 */
-
 }
 
 /**
@@ -239,9 +198,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 5;
+  htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 7999;
+  htim2.Init.Period = 47999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
@@ -300,9 +259,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 5;
+  htim3.Init.Prescaler = 0;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 7999;
+  htim3.Init.Period = 47999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
@@ -335,6 +294,37 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 2 */
   HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
+  * @brief TIM14 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM14_Init(void)
+{
+
+  /* USER CODE BEGIN TIM14_Init 0 */
+
+  /* USER CODE END TIM14_Init 0 */
+
+  /* USER CODE BEGIN TIM14_Init 1 */
+
+  /* USER CODE END TIM14_Init 1 */
+  htim14.Instance = TIM14;
+  htim14.Init.Prescaler = 47;
+  htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim14.Init.Period = 39999;
+  htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim14) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM14_Init 2 */
+
+  /* USER CODE END TIM14_Init 2 */
 
 }
 
@@ -382,15 +372,53 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-void setPWM(uint8_t ledMask, uint16_t value)
+void PrintInt(uint32_t value, uint8_t * pbuf, uint32_t length)
 {
-  if (ledMask & PWM_0) TIM2->CCR1 = value;
-  if (ledMask & PWM_1) TIM2->CCR2 = value;
-  if (ledMask & PWM_2) TIM2->CCR3 = value;
-  if (ledMask & PWM_3) TIM2->CCR4 = value;
-  if (ledMask & PWM_4) TIM3->CCR1 = value;
-  if (ledMask & PWM_STRIPE) TIM3->CCR2 = value;
-  if (ledMask & PWM_DEBUG2) TIM3->CCR4 = value;
+  uint32_t divisor = 1;
+  while(length)
+  {
+    pbuf[--length] = '0' + (value/divisor)%10;
+    divisor *= 10;
+  }
+}
+
+// Gamma brightness lookup table <https://victornpb.github.io/gamma-table-generator>
+// gamma = 2.30 steps = 256 range = 0-999
+const uint16_t gamma_lut[256] = {
+     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   1,   1,
+     2,   2,   2,   3,   3,   3,   4,   4,   4,   5,   5,   6,   6,   7,   7,   8,
+     8,   9,  10,  10,  11,  12,  13,  13,  14,  15,  16,  17,  18,  18,  19,  20,
+    21,  22,  24,  25,  26,  27,  28,  29,  31,  32,  33,  34,  36,  37,  39,  40,
+    42,  43,  45,  46,  48,  49,  51,  53,  54,  56,  58,  60,  62,  64,  66,  67,
+    69,  71,  74,  76,  78,  80,  82,  84,  86,  89,  91,  93,  96,  98, 101, 103,
+   106, 108, 111, 113, 116, 119, 121, 124, 127, 130, 133, 136, 138, 141, 144, 147,
+   151, 154, 157, 160, 163, 166, 170, 173, 176, 180, 183, 187, 190, 194, 197, 201,
+   205, 208, 212, 216, 220, 224, 227, 231, 235, 239, 243, 247, 252, 256, 260, 264,
+   268, 273, 277, 281, 286, 290, 295, 299, 304, 309, 313, 318, 323, 327, 332, 337,
+   342, 347, 352, 357, 362, 367, 372, 377, 383, 388, 393, 398, 404, 409, 415, 420,
+   426, 431, 437, 443, 448, 454, 460, 466, 472, 478, 484, 490, 496, 502, 508, 514,
+   520, 526, 533, 539, 545, 552, 558, 565, 571, 578, 585, 591, 598, 605, 612, 618,
+   625, 632, 639, 646, 653, 660, 668, 675, 682, 689, 697, 704, 711, 719, 726, 734,
+   741, 749, 757, 765, 772, 780, 788, 796, 804, 812, 820, 828, 836, 844, 852, 861,
+   869, 877, 886, 894, 903, 911, 920, 928, 937, 946, 955, 963, 972, 981, 990, 999,
+  };
+
+uint16_t gammaCorr(uint8_t value)
+{
+  return gamma_lut[value];
+  //return gamma_lut[value/256];
+}
+
+void setPWM(uint8_t ledMask, uint8_t value)
+{
+  uint16_t gammaCorrected = gammaCorr(value);
+  if (ledMask & PWM_0) TIM2->CCR1 = gammaCorrected;
+  if (ledMask & PWM_1) TIM2->CCR2 = gammaCorrected;
+  if (ledMask & PWM_2) TIM2->CCR3 = gammaCorrected;
+  if (ledMask & PWM_3) TIM2->CCR4 = gammaCorrected;
+  if (ledMask & PWM_4) TIM3->CCR1 = gammaCorrected;
+  if (ledMask & PWM_STRIPE) TIM3->CCR2 = gammaCorrected;
+  if (ledMask & PWM_DEBUG2) TIM3->CCR4 = gammaCorrected;
 }
 
 void advanceFader(fader_t* fader)
@@ -398,6 +426,23 @@ void advanceFader(fader_t* fader)
   if (fader->value >= 160) fader->dir = -2;
   else if (fader->value <= 40) fader->dir = 8;
   fader->value += ((int)fader->step) * fader->dir;
+}
+
+//uint8_t timestamp[] = "00000\r\n";
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim == &htim14)
+  {
+//    uint32_t start = TIM14->CNT;
+    for (int i=0; i<N_ANIM; ++i)
+    {
+      advanceFader(&faders[i]);
+      setPWM(1<<i, faders[i].value);
+      if (i<(N_ANIM-1) && faders[i].value > 25 && faders[i].value < 35) faders[i+1].step = 1;
+    }
+//    PrintInt(TIM14->CNT-start, timestamp, 5);
+//    CDC_Transmit_FS(timestamp, 7);
+  }
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
