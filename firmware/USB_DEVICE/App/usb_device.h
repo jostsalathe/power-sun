@@ -83,6 +83,9 @@ void MX_USB_DEVICE_Init(void);
  */
 /* USER CODE BEGIN FD */
 
+uint8_t MX_USB_DEVICE_IsConnected();
+uint8_t MX_USB_DEVICE_IsOpen();
+
 /* USER CODE END FD */
 /**
   * @}

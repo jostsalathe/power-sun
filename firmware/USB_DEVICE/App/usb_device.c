@@ -55,7 +55,15 @@ USBD_HandleTypeDef hUsbDeviceFS;
  * -- Insert your external function declaration here --
  */
 /* USER CODE BEGIN 1 */
+uint8_t MX_USB_DEVICE_IsConnected()
+{
+  return (hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED);
+}
 
+uint8_t MX_USB_DEVICE_IsOpen()
+{
+  return MX_USB_DEVICE_IsConnected() && (hUsbDeviceFS.ep0_state != USBD_EP0_STATUS_IN);
+}
 /* USER CODE END 1 */
 
 /**

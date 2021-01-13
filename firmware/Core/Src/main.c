@@ -124,10 +124,17 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   faders[0].step = 1;
-  setPWM(PWM_STRIPE, 30);
   while (1)
   {
     HAL_Delay(10);
+    if (MX_USB_DEVICE_IsOpen())
+    {
+      setPWM(PWM_STRIPE, 63);
+    }
+    else
+    {
+      setPWM(PWM_STRIPE, 0);
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
