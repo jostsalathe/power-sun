@@ -42,13 +42,15 @@ const uint16_t gamma_lut[256] = {
 /* Private variables ---------------------------------------------------------*/
 
 /* Private function prototypes -----------------------------------------------*/
+void show(sunimation_t* _this);
 void bufPut(sunimation_t* _this, uint8_t value);
 uint8_t bufGet(sunimation_t* _this, uint8_t offset);
-uint16_t gammaCorr(uint8_t value);
+uint16_t gammaDimmed(uint8_t value, uint8_t brightness);
 
 /* Exported function implementations ------------------------------------------*/
 void sunimationInit(sunimation_t* _this, uint32_t* d0, uint32_t* d1, uint32_t* d2, uint32_t* d3, uint32_t* d4, uint32_t* st)
 {
+  _this->state = sunimationOff;
   for (int i=0; i<SUN_BUF_SIZE; ++i)
   {
     _this->buf[i] = 0;
@@ -60,21 +62,55 @@ void sunimationInit(sunimation_t* _this, uint32_t* d0, uint32_t* d1, uint32_t* d
   _this->dimmerRegisters[3] = d3;
   _this->dimmerRegisters[4] = d4;
   _this->dimmerRegisters[5] = st;
+  _this->sunMasterBrightness = 63;
+  _this->stripesMasterBrightness = 160;
+  _this->onPeakBrightness = 255;
+  _this->onTimeConstant = 10;
+  _this->idleBrightness = 100;
+  _this->activeBrightness = 160;
+  _this->activeTimeConstant = 20;
+  _this->propagationDelay = 6;
+  _this->offTimeConstant = 10;
+}
+
+void sunimationAdvance(sunimation_t* _this, uint8_t isOn, uint8_t isActive)
+{
+  switch(_this->state)
+  {
+  case sunimationOff:
+    //TODO: do stuff
+  default:
+  }
+  show(_this);
 }
 
 /* Private function implementations -------------------------------------------*/
+void show(sunimation_t* _this)
+{
+  uint8_t brightness = _this->sunMasterBrightness;
+  for(int i=0; i<SUN_RINGS; ++i)
+  {
+    if (i == SUN_RINGS - 1)
+    {
+      brightness = _this->stripesMasterBrightness;
+    }
+    uint8_t value = bufGet(_this, _this->propagationDelay * i);
+    _this->dimmerRegisters[i] = gammaDimmed(value, brightness);
+  }
+}
+
 void bufPut(sunimation_t* _this, uint8_t value)
 {
-  _this->;
+  _this->buf[++_this->bufFront] = value;
 }
 
 uint8_t bufGet(sunimation_t* _this, uint8_t offset)
 {
-  ;
+  return _this->buf[_this->bufFront - offset];
 }
 
-uint16_t gammaCorr(uint8_t value)
+uint16_t gammaDimmed(uint8_t value, uint8_t brightness)
 {
-  return gamma_lut[value];
+  return ((uint32_t) gamma_lut[value]) * brightness / 255;
 }
 

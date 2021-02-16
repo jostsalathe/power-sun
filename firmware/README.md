@@ -14,14 +14,12 @@ Parameters
 - master brightness rings (8 bit)
 - master brightness stripes (8 bit)
 - power-on peak brightness
-- power-on propagation delay
 - power-on time constant
 - idle brightness
 - hdd maximum brightness
 - hdd time constant
 - propagation delay
 - power-off time constant
-- power-off propagation delay
 
 ## Animation description
 The central LED ring essentially runs the animation and the other rings just follow successively with
