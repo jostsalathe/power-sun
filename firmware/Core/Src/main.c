@@ -29,23 +29,10 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef struct {
-  uint8_t value;
-  uint8_t step;
-  int8_t dir;
-} fader_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define PWM_0 (1<<0)
-#define PWM_1 (1<<1)
-#define PWM_2 (1<<2)
-#define PWM_3 (1<<3)
-#define PWM_4 (1<<4)
-#define PWM_STRIPE (1<<5)
-#define PWM_DEBUG2 (1<<6)
-#define N_ANIM 5
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -59,7 +46,10 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim14;
 
 /* USER CODE BEGIN PV */
-fader_t faders[N_ANIM] = {0};
+__IO uint8_t doTick;
+__IO GPIO_PinState isOn;
+__IO GPIO_PinState isActive;
+sunimation_t sunimation;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,8 +60,6 @@ static void MX_TIM3_Init(void);
 static void MX_TIM14_Init(void);
 /* USER CODE BEGIN PFP */
 void PrintInt(uint32_t value, uint8_t * pbuf, uint32_t length);
-void setPWM(uint8_t led, uint8_t value);
-void advanceFader(fader_t* fader);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -112,6 +100,7 @@ int main(void)
   MX_USB_DEVICE_Init();
   MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
+  sunimationInit(&sunimation, &TIM2->CCR1, &TIM2->CCR2, &TIM2->CCR3, &TIM2->CCR4, &TIM3->CCR1, &TIM3->CCR2);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
@@ -120,22 +109,31 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
   HAL_TIM_Base_Start_IT(&htim14);
+  isOn = GPIO_PIN_SET;
+  isActive = GPIO_PIN_RESET;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  faders[0].step = 1;
+//  uint8_t timestamp[] = "00000\r\n";
   while (1)
   {
-    HAL_Delay(10);
+    HAL_Delay(1);
+//    uint32_t start = TIM14->CNT;
+
+    if (doTick)
+    {
+      doTick = 0;
+      sunimationAdvance(&sunimation, isOn, isActive);
+    }
+
     if (MX_USB_DEVICE_IsOpen())
     {
-      setPWM(PWM_STRIPE, 63);
+      //TODO handle USB device
     }
-    else
-    {
-      setPWM(PWM_STRIPE, 0);
-    }
+
+//    PrintInt(TIM14->CNT-start, timestamp, 5);
+//    CDC_Transmit_FS(timestamp, 7);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -392,72 +390,30 @@ void PrintInt(uint32_t value, uint8_t * pbuf, uint32_t length)
   }
 }
 
-// Gamma brightness lookup table <https://victornpb.github.io/gamma-table-generator>
-// gamma = 2.30 steps = 256 range = 0-999
-const uint16_t gamma_lut[256] = {
-     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   1,   1,
-     2,   2,   2,   3,   3,   3,   4,   4,   4,   5,   5,   6,   6,   7,   7,   8,
-     8,   9,  10,  10,  11,  12,  13,  13,  14,  15,  16,  17,  18,  18,  19,  20,
-    21,  22,  24,  25,  26,  27,  28,  29,  31,  32,  33,  34,  36,  37,  39,  40,
-    42,  43,  45,  46,  48,  49,  51,  53,  54,  56,  58,  60,  62,  64,  66,  67,
-    69,  71,  74,  76,  78,  80,  82,  84,  86,  89,  91,  93,  96,  98, 101, 103,
-   106, 108, 111, 113, 116, 119, 121, 124, 127, 130, 133, 136, 138, 141, 144, 147,
-   151, 154, 157, 160, 163, 166, 170, 173, 176, 180, 183, 187, 190, 194, 197, 201,
-   205, 208, 212, 216, 220, 224, 227, 231, 235, 239, 243, 247, 252, 256, 260, 264,
-   268, 273, 277, 281, 286, 290, 295, 299, 304, 309, 313, 318, 323, 327, 332, 337,
-   342, 347, 352, 357, 362, 367, 372, 377, 383, 388, 393, 398, 404, 409, 415, 420,
-   426, 431, 437, 443, 448, 454, 460, 466, 472, 478, 484, 490, 496, 502, 508, 514,
-   520, 526, 533, 539, 545, 552, 558, 565, 571, 578, 585, 591, 598, 605, 612, 618,
-   625, 632, 639, 646, 653, 660, 668, 675, 682, 689, 697, 704, 711, 719, 726, 734,
-   741, 749, 757, 765, 772, 780, 788, 796, 804, 812, 820, 828, 836, 844, 852, 861,
-   869, 877, 886, 894, 903, 911, 920, 928, 937, 946, 955, 963, 972, 981, 990, 999,
-  };
-
-uint16_t gammaCorr(uint8_t value)
+void setDebugLEDs(uint8_t LED1, uint8_t LED2)
 {
-  return gamma_lut[value];
-  //return gamma_lut[value/256];
+  HAL_GPIO_WritePin(DEBUG1_GPIO_Port, DEBUG1_Pin, (LED1 == 1) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+  TIM3->CCR4 = gammaDimmed(LED2, 255);
 }
 
-void setPWM(uint8_t ledMask, uint8_t value)
-{
-  uint16_t gammaCorrected = gammaCorr(value);
-  if (ledMask & PWM_0) TIM2->CCR1 = gammaCorrected;
-  if (ledMask & PWM_1) TIM2->CCR2 = gammaCorrected;
-  if (ledMask & PWM_2) TIM2->CCR3 = gammaCorrected;
-  if (ledMask & PWM_3) TIM2->CCR4 = gammaCorrected;
-  if (ledMask & PWM_4) TIM3->CCR1 = gammaCorrected;
-  if (ledMask & PWM_STRIPE) TIM3->CCR2 = gammaCorrected;
-  if (ledMask & PWM_DEBUG2) TIM3->CCR4 = gammaCorrected;
-}
-
-void advanceFader(fader_t* fader)
-{
-  if (fader->value >= 160) fader->dir = -2;
-  else if (fader->value <= 40) fader->dir = 8;
-  fader->value += ((int)fader->step) * fader->dir;
-}
-
-//uint8_t timestamp[] = "00000\r\n";
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim == &htim14)
   {
-//    uint32_t start = TIM14->CNT;
-    for (int i=0; i<N_ANIM; ++i)
-    {
-      advanceFader(&faders[i]);
-      setPWM(1<<i, faders[i].value);
-      if (i<(N_ANIM-1) && faders[i].value > 25 && faders[i].value < 35) faders[i+1].step = 1;
-    }
-//    PrintInt(TIM14->CNT-start, timestamp, 5);
-//    CDC_Transmit_FS(timestamp, 7);
+    doTick = 1;
   }
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	//TODO: process NHDD_Pin and NPOWER_Pin interrupt events
+  if (GPIO_Pin == NPOWER_Pin)
+  {
+    isOn = !HAL_GPIO_ReadPin(NPOWER_GPIO_Port, NPOWER_Pin);
+  }
+  else if (GPIO_Pin == NHDD_Pin)
+  {
+    isActive = !HAL_GPIO_ReadPin(NHDD_GPIO_Port, NHDD_Pin);
+  }
 }
 
 /* USER CODE END 4 */

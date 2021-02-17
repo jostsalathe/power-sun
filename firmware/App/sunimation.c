@@ -9,6 +9,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "sunimation.h"
+#include "usbd_cdc_if.h"
 
 /* Private types -------------------------------------------------------------*/
 
@@ -42,13 +43,22 @@ const uint16_t gamma_lut[256] = {
 /* Private variables ---------------------------------------------------------*/
 
 /* Private function prototypes -----------------------------------------------*/
+void sunimateOff(sunimation_t* _this, GPIO_PinState isOn);
+void sunimateStandbyTimeout(sunimation_t* _this, GPIO_PinState isOn);
+void sunimateStarting(sunimation_t* _this, GPIO_PinState isOn);
+void sunimateRunning(sunimation_t* _this, GPIO_PinState isOn, GPIO_PinState isActive);
+uint8_t fade(uint8_t currentValue, uint8_t targetValue, uint8_t increment);
 void show(sunimation_t* _this);
 void bufPut(sunimation_t* _this, uint8_t value);
 uint8_t bufGet(sunimation_t* _this, uint8_t offset);
-uint16_t gammaDimmed(uint8_t value, uint8_t brightness);
 
 /* Exported function implementations ------------------------------------------*/
-void sunimationInit(sunimation_t* _this, uint32_t* d0, uint32_t* d1, uint32_t* d2, uint32_t* d3, uint32_t* d4, uint32_t* st)
+uint16_t gammaDimmed(uint8_t value, uint8_t brightness)
+{
+  return ((uint32_t) gamma_lut[value]) * brightness / 255;
+}
+
+void sunimationInit(sunimation_t* _this, __IO uint32_t* d0, __IO uint32_t* d1, __IO uint32_t* d2, __IO uint32_t* d3, __IO uint32_t* d4, __IO uint32_t* st)
 {
   _this->state = sunimationOff;
   for (int i=0; i<SUN_BUF_SIZE; ++i)
@@ -56,6 +66,8 @@ void sunimationInit(sunimation_t* _this, uint32_t* d0, uint32_t* d1, uint32_t* d
     _this->buf[i] = 0;
   }
   _this->bufFront = 0;
+  _this->standbyTimeoutCounter = 0;
+
   _this->dimmerRegisters[0] = d0;
   _this->dimmerRegisters[1] = d1;
   _this->dimmerRegisters[2] = d2;
@@ -64,27 +76,133 @@ void sunimationInit(sunimation_t* _this, uint32_t* d0, uint32_t* d1, uint32_t* d
   _this->dimmerRegisters[5] = st;
   _this->sunMasterBrightness = 63;
   _this->stripesMasterBrightness = 160;
-  _this->onPeakBrightness = 255;
-  _this->onTimeConstant = 10;
+  _this->propagationDelay = 4;
+  _this->standbyBrightness = 20;
+  _this->standbyIncrement = 2;
+  _this->standbyTimeout = 32;
+  _this->startingBrightness = 255;
+  _this->startingIncrement = 8;
   _this->idleBrightness = 100;
+  _this->idleDecrement = 2;
   _this->activeBrightness = 160;
-  _this->activeTimeConstant = 20;
-  _this->propagationDelay = 6;
-  _this->offTimeConstant = 10;
+  _this->activeIncrement = 6;
+  _this->stoppingDecrement = 4;
 }
 
-void sunimationAdvance(sunimation_t* _this, uint8_t isOn, uint8_t isActive)
+void sunimationAdvance(sunimation_t* _this, GPIO_PinState isOn, GPIO_PinState isActive)
 {
   switch(_this->state)
   {
-  case sunimationOff:
-    //TODO: do stuff
   default:
+    _this->state = sunimationOff;
+    // deliberate fall-through
+  case sunimationOff:
+    sunimateOff(_this, isOn);
+    break;
+  case sunimationStandbyTimeout:
+    sunimateStandbyTimeout(_this, isOn);
+    break;
+  case sunimationStarting:
+    sunimateStarting(_this, isOn);
+    break;
+  case sunimationRunning:
+    sunimateRunning(_this, isOn, isActive);
+    break;
   }
   show(_this);
 }
 
 /* Private function implementations -------------------------------------------*/
+void sunimateOff(sunimation_t* _this, GPIO_PinState isOn)
+{
+  uint8_t newValue = fade(bufGet(_this, 0), 0, _this->stoppingDecrement);
+  bufPut(_this, newValue);
+  if (isOn)
+  {
+    _this->standbyTimeoutCounter = 0;
+    _this->state = sunimationStandbyTimeout;
+  }
+}
+
+void sunimateStandbyTimeout(sunimation_t* _this, GPIO_PinState isOn)
+{
+  uint8_t newValue = fade(bufGet(_this, 0), _this->standbyBrightness, _this->standbyIncrement);
+  bufPut(_this, newValue);
+  if (isOn)
+  {
+    if (++_this->standbyTimeoutCounter >= _this->standbyTimeout)
+    {
+      _this->state = sunimationStarting;
+    }
+  }
+  else
+  {
+    _this->state = sunimationOff;
+  }
+}
+
+void sunimateStarting(sunimation_t* _this, GPIO_PinState isOn)
+{
+  uint8_t newValue = fade(bufGet(_this, 0), _this->startingBrightness, _this->startingIncrement);
+  bufPut(_this, newValue);
+  if (isOn)
+  {
+    if (newValue >= _this->startingBrightness)
+    {
+      _this->state = sunimationRunning;
+    }
+  }
+  else
+  {
+    _this->state = sunimationOff;
+  }
+}
+
+void sunimateRunning(sunimation_t* _this, GPIO_PinState isOn, GPIO_PinState isActive)
+{
+  uint8_t targetBrightness;
+  uint8_t increment;
+  if (isActive)
+  {
+    targetBrightness = _this->activeBrightness;
+    increment = _this->activeIncrement;
+  }
+  else
+  {
+    targetBrightness = _this->idleBrightness;
+    increment = _this->idleDecrement;
+  }
+  uint8_t newValue = fade(bufGet(_this, 0), targetBrightness, increment);
+  bufPut(_this, newValue);
+  if (!isOn)
+  {
+    _this->state = sunimationOff;
+  }
+}
+
+uint8_t fade(uint8_t currentValue, uint8_t targetValue, uint8_t increment)
+{
+  int delta = (int) targetValue;
+  delta -= (int) currentValue;
+
+  if (delta > 0)
+  {
+    if (delta > increment)
+    {
+      return currentValue + increment;
+    }
+  }
+  else if (delta < 0)
+  {
+    if ((delta * -1) > increment)
+    {
+      return currentValue - increment;
+    }
+  }
+
+  return targetValue;
+}
+
 void show(sunimation_t* _this)
 {
   uint8_t brightness = _this->sunMasterBrightness;
@@ -95,7 +213,7 @@ void show(sunimation_t* _this)
       brightness = _this->stripesMasterBrightness;
     }
     uint8_t value = bufGet(_this, _this->propagationDelay * i);
-    _this->dimmerRegisters[i] = gammaDimmed(value, brightness);
+    *_this->dimmerRegisters[i] = gammaDimmed(value, brightness);
   }
 }
 
@@ -106,11 +224,7 @@ void bufPut(sunimation_t* _this, uint8_t value)
 
 uint8_t bufGet(sunimation_t* _this, uint8_t offset)
 {
-  return _this->buf[_this->bufFront - offset];
-}
-
-uint16_t gammaDimmed(uint8_t value, uint8_t brightness)
-{
-  return ((uint32_t) gamma_lut[value]) * brightness / 255;
+  uint8_t pos = _this->bufFront - offset;
+  return _this->buf[pos];
 }
 

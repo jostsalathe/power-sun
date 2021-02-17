@@ -56,7 +56,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+void setDebugLEDs(uint8_t LED1, uint8_t LED2);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
