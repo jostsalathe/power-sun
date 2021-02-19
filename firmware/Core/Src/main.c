@@ -109,7 +109,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
   HAL_TIM_Base_Start_IT(&htim14);
-  isOn = GPIO_PIN_SET;
+  isOn = GPIO_PIN_RESET;
   isActive = GPIO_PIN_RESET;
   /* USER CODE END 2 */
 
